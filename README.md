@@ -1,6 +1,6 @@
 Machine Learning Project - LESGO!
 
-## 📁 Sample Repository Structure
+## 📁 Repository Structure (Sample given by prof)
 
 ```
 project-name/

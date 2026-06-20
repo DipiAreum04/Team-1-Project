@@ -1,0 +1,2 @@
+model,split,threshold,accuracy,recall_1,precision_1,f1_1
+Logistic Regression,test,0.7092964824120603,0.8526666666666667,0.846,0.959805510534846,0.8993166287015946

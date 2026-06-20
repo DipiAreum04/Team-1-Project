@@ -1,6 +1,7 @@
 """
 Preprocessing pipeline for the Loan Default Risk project..
-All transformations are fit on the training set only and applied to val/test.
+All transformations are fit on the training set only and applied to test set.
+Validation is done using k-fold cross-validation inside the training set, so the test set remains untouched.
 Target:
     is_risky = 1 - loan_status
     (loan_status: 1 = approved, 0 = rejected  ->  risky = rejected applicant)
@@ -67,15 +68,18 @@ def load_and_create_target(path: str) -> pd.DataFrame:
     return df
 
 # ========================================================
-# Numerical cleaning: Handle outlier ages and log-transform income
+# Numerical cleaning: Handle outlier ages and log-transform skewed features
 # ========================================================
 def _clean_numerical(X):
     """
-    Cap implausible ages and log-transform income.
+    Cap implausible ages and log-transform the two heavy right-skewed features
+    (income and employment experience). clip(lower=0) guards against any negative
+    values producing NaN under log1p.
     """
     X = X.copy()
     X['person_age'] = X['person_age'].clip(upper=AGE_CAP)
-    X['person_income'] = np.log1p(X['person_income'])
+    X['person_income'] = np.log1p(X['person_income'].clip(lower=0))
+    X['person_emp_exp'] = np.log1p(X['person_emp_exp'].clip(lower=0))
     return X
 
 
@@ -101,7 +105,7 @@ def split_data(df: pd.DataFrame, test_size: float = 0.20):
 def build_preprocessor(drop_prev_defaults: bool = False) -> ColumnTransformer:
     """
     Build a ColumnTransformer that:
-    - Cleans then scales numerical features (cap age, log income, StandardScaler)
+    - Cleans then scales numerical features (cap age, log skewed features, StandardScaler)
     - Ordinally encodes person_education (HS < Associate < Bachelor < Master < Doctorate)
     - One-hot encodes the nominal categoricals
     
@@ -109,7 +113,10 @@ def build_preprocessor(drop_prev_defaults: bool = False) -> ColumnTransformer:
     near-perfect shortcut predictor) to produce the WITHOUT feature set.
     """
     numerical_pipeline = Pipeline([
-        ('clean', FunctionTransformer(_clean_numerical, validate=False)),
+        # _clean_numerical changes values, not columns, so names pass through. 
+        # Required for ColumnTransformer.get_feature_names_out().
+        ('clean', FunctionTransformer(_clean_numerical, validate=False,
+                                      feature_names_out='one-to-one')),
         ('scaler', StandardScaler()),
     ])
 
@@ -137,12 +144,19 @@ def build_preprocessor(drop_prev_defaults: bool = False) -> ColumnTransformer:
     return preprocessor
 
 
-def fit_and_save_preprocessor(X_train: pd.DataFrame, path=DEFAULT_PREPROCESSOR_PATH) -> ColumnTransformer:
-    preprocessor = build_preprocessor()
+def fit_and_save_preprocessor(X_train: pd.DataFrame, path=DEFAULT_PREPROCESSOR_PATH,
+                              drop_prev_defaults: bool = False) -> ColumnTransformer:
+    """
+    Fit a preprocessor on X_train and save it. Defaults to the WITH feature set. 
+    Pass drop_prev_defaults=True to fit and save the WITHOUT variant and
+    save it in a distinct `path` so it doesn't overwrite the demo pkl.
+    """
+    preprocessor = build_preprocessor(drop_prev_defaults=drop_prev_defaults)
     preprocessor.fit(X_train)
     joblib.dump(preprocessor, path)
     print(f'Preprocessor saved to {path}')
     return preprocessor
+
 
 
 def transform(preprocessor: ColumnTransformer, X: pd.DataFrame) -> np.ndarray:
@@ -150,12 +164,12 @@ def transform(preprocessor: ColumnTransformer, X: pd.DataFrame) -> np.ndarray:
 
 
 def get_feature_names(preprocessor: ColumnTransformer) -> list:
-    """Return the column names of the encoded matrix, in output order."""
-    ohe = preprocessor.named_transformers_['nom']['ohe']
-    # ohe.feature_names_in_ = the nominal cols this preprocessor was actually fit on
-    # (3 cols for the WITHOUT set, 4 for WITH)
-    nom_names = ohe.get_feature_names_out(ohe.feature_names_in_).tolist()
-    return list(NUMERICAL_COLS) + list(ORDINAL_COLS) + nom_names
+    """
+    Return the column names of the encoded matrix, in output order, read directly
+    from the FITTED transformer so names can never desync from the matrix (handles
+    both the WITH and WITHOUT feature sets automatically).
+    """
+    return [name.split('__', 1)[-1] for name in preprocessor.get_feature_names_out()]
 
 
 # ========================================================

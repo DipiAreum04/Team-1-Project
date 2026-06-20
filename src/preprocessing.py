@@ -98,12 +98,15 @@ def split_data(df: pd.DataFrame, test_size: float = 0.20):
 # ========================================================
 # The preprocessor
 # ========================================================
-def build_preprocessor() -> ColumnTransformer:
+def build_preprocessor(drop_prev_defaults: bool = False) -> ColumnTransformer:
     """
     Build a ColumnTransformer that:
     - Cleans then scales numerical features (cap age, log income, StandardScaler)
     - Ordinally encodes person_education (HS < Associate < Bachelor < Master < Doctorate)
     - One-hot encodes the nominal categoricals
+    
+    drop_prev_defaults: if True, excludes 'previous_loan_defaults_on_file' (the
+    near-perfect shortcut predictor) to produce the WITHOUT feature set.
     """
     numerical_pipeline = Pipeline([
         ('clean', FunctionTransformer(_clean_numerical, validate=False)),
@@ -120,10 +123,15 @@ def build_preprocessor() -> ColumnTransformer:
         ('ohe', OneHotEncoder(sparse_output=False, handle_unknown='ignore')),
     ])
 
+    # feature-set switch: drop the shortcut column from the nominal group only
+    nominal_cols = [c for c in NOMINAL_COLS if c != 'previous_loan_defaults_on_file'] \
+        if drop_prev_defaults else NOMINAL_COLS
+
+
     preprocessor = ColumnTransformer(transformers=[
         ('num', numerical_pipeline, NUMERICAL_COLS),
         ('ord', ordinal_pipeline, ORDINAL_COLS),
-        ('nom', nominal_pipeline, NOMINAL_COLS),
+        ('nom', nominal_pipeline, nominal_cols), # local variable, not the constant
     ], remainder='drop')
 
     return preprocessor
@@ -144,7 +152,9 @@ def transform(preprocessor: ColumnTransformer, X: pd.DataFrame) -> np.ndarray:
 def get_feature_names(preprocessor: ColumnTransformer) -> list:
     """Return the column names of the encoded matrix, in output order."""
     ohe = preprocessor.named_transformers_['nom']['ohe']
-    nom_names = ohe.get_feature_names_out(NOMINAL_COLS).tolist()
+    # ohe.feature_names_in_ = the nominal cols this preprocessor was actually fit on
+    # (3 cols for the WITHOUT set, 4 for WITH)
+    nom_names = ohe.get_feature_names_out(ohe.feature_names_in_).tolist()
     return list(NUMERICAL_COLS) + list(ORDINAL_COLS) + nom_names
 
 

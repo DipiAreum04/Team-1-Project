@@ -38,6 +38,11 @@ NUMERICAL_COLS = [
     'loan_int_rate', 'loan_percent_income', 'cb_person_cred_hist_length', 'credit_score'
 ]
 
+# Feature Engineered numerical columns. Only present when add_engineered=True is used.
+# Treated exactly like the raw numerical columns (scaled with StandardScaler).
+ENGINEERED_COLS = ['employment_experience_ratio', 'credit_history_ratio']
+
+
 # ordinal column
 ORDINAL_COLS = ['person_education'] 
 

@@ -38,6 +38,11 @@ NUMERICAL_COLS = [
     'loan_int_rate', 'loan_percent_income', 'cb_person_cred_hist_length', 'credit_score'
 ]
 
+# Feature Engineered numerical columns. Only present when add_engineered=True is used.
+# Treated exactly like the raw numerical columns (scaled with StandardScaler).
+ENGINEERED_COLS = ['employment_experience_ratio', 'credit_history_ratio']
+
+
 # ordinal column
 ORDINAL_COLS = ['person_education'] 
 
@@ -59,11 +64,39 @@ DEFAULT_PREPROCESSOR_PATH = MODELS_DIR / 'preprocessor.pkl'
 # ========================================================
 
 # ========================================================
-# Target creation
+# Optional feature engineering (row-wise only -> leakage-safe)
 # ========================================================
-def load_data(path: str) -> pd.DataFrame:
-    """Load the CSV. The target is loan_status (1 = approved, 0 = rejected)."""
-    return pd.read_csv(path)
+def add_features(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Add two ratio features. Purely row-wise arithmetic (no cross-row statistics),
+    so it is leakage-free and can be applied before the train/test split.
+
+    adult_years = (person_age - 18), floored at 1, to anchor ratios to working/adult
+    years rather than raw age and clip(lower=1) guards against divide-by-zero / under-18 rows.
+
+    NOTE: employment_experience_ratio can exceed 1 when stated experience is implausibly
+    high for the age, so those rows are noise resulting from data quality issues.
+    """
+    df = df.copy()
+    adult_years = (df['person_age'] - 18).clip(lower=1)
+    df['employment_experience_ratio'] = df['person_emp_exp'] / adult_years
+    df['credit_history_ratio'] = df['cb_person_cred_hist_length'] / adult_years
+    return df
+
+
+# ========================================================
+# Load
+# ========================================================
+def load_data(path: str, add_engineered: bool = False) -> pd.DataFrame:
+    """
+    Load the CSV. Target is loan_status (1 = approved, 0 = rejected).
+    add_engineered=True appends the two ratio features from add_features().
+    """
+    df = pd.read_csv(path)
+    if add_engineered:
+        df = add_features(df)
+    return df
+
 
 # ========================================================
 # Numerical cleaning: Handle outlier ages and log-transform skewed features
@@ -100,18 +133,22 @@ def split_data(df: pd.DataFrame, test_size: float = 0.20):
 # ========================================================
 # The preprocessor
 # ========================================================
-def build_preprocessor(drop_prev_defaults: bool = False) -> ColumnTransformer:
+def build_preprocessor(drop_prev_defaults: bool = False,
+                       add_engineered: bool = False) -> ColumnTransformer:
     """
     Build a ColumnTransformer that:
     - Cleans then scales numerical features (cap age, log skewed features, StandardScaler)
     - Ordinally encodes person_education (HS < Associate < Bachelor < Master < Doctorate)
     - One-hot encodes the nominal categoricals
-    
+
     drop_prev_defaults: if True, excludes 'previous_loan_defaults_on_file' (the
-    near-perfect shortcut predictor) to produce the WITHOUT feature set.
+        near-perfect shortcut predictor) to produce the WITHOUT feature set.
+    add_engineered: if True, includes the two ratio features from add_features()
+        in the numerical group (the input df must already contain them, i.e. it was
+        loaded with load_data(..., add_engineered=True)).
     """
     numerical_pipeline = Pipeline([
-        # _clean_numerical changes values, not columns, so names pass through. 
+        # _clean_numerical changes values, not columns, so names pass through.
         # Required for ColumnTransformer.get_feature_names_out().
         ('clean', FunctionTransformer(_clean_numerical, validate=False,
                                       feature_names_out='one-to-one')),
@@ -128,33 +165,36 @@ def build_preprocessor(drop_prev_defaults: bool = False) -> ColumnTransformer:
         ('ohe', OneHotEncoder(sparse_output=False, handle_unknown='ignore')),
     ])
 
+    # numerical group: optionally extend with engineered ratio columns
+    numerical_cols = NUMERICAL_COLS + ENGINEERED_COLS if add_engineered else NUMERICAL_COLS
+
     # feature-set switch: drop the shortcut column from the nominal group only
     nominal_cols = [c for c in NOMINAL_COLS if c != 'previous_loan_defaults_on_file'] \
         if drop_prev_defaults else NOMINAL_COLS
 
-
     preprocessor = ColumnTransformer(transformers=[
-        ('num', numerical_pipeline, NUMERICAL_COLS),
+        ('num', numerical_pipeline, numerical_cols),   # local variable, not the constant
         ('ord', ordinal_pipeline, ORDINAL_COLS),
-        ('nom', nominal_pipeline, nominal_cols), # local variable, not the constant
+        ('nom', nominal_pipeline, nominal_cols),       # local variable, not the constant
     ], remainder='drop')
 
     return preprocessor
 
 
 def fit_and_save_preprocessor(X_train: pd.DataFrame, path=DEFAULT_PREPROCESSOR_PATH,
-                              drop_prev_defaults: bool = False) -> ColumnTransformer:
+                              drop_prev_defaults: bool = False,
+                              add_engineered: bool = False) -> ColumnTransformer:
     """
-    Fit a preprocessor on X_train and save it. Defaults to the WITH feature set. 
-    Pass drop_prev_defaults=True to fit and save the WITHOUT variant and
-    save it in a distinct `path` so it doesn't overwrite the demo pkl.
+    Fit a preprocessor on X_train and save it. Defaults to the WITH feature set.
+    Pass drop_prev_defaults=True / add_engineered=True for variants, and give each
+    variant a distinct `path` so it doesn't overwrite the demo pkl.
     """
-    preprocessor = build_preprocessor(drop_prev_defaults=drop_prev_defaults)
+    preprocessor = build_preprocessor(drop_prev_defaults=drop_prev_defaults,
+                                      add_engineered=add_engineered)
     preprocessor.fit(X_train)
     joblib.dump(preprocessor, path)
     print(f'Preprocessor saved to {path}')
     return preprocessor
-
 
 
 def transform(preprocessor: ColumnTransformer, X: pd.DataFrame) -> np.ndarray:
@@ -165,13 +205,40 @@ def get_feature_names(preprocessor: ColumnTransformer) -> list:
     """
     Return the column names of the encoded matrix, in output order, read directly
     from the FITTED transformer so names can never desync from the matrix (handles
-    both the WITH and WITHOUT feature sets automatically).
+    all feature-set variants automatically).
     """
     return [name.split('__', 1)[-1] for name in preprocessor.get_feature_names_out()]
 
 
+
 # ========================================================
-# End-to-end convenience wrapper for the notebook
+# One-call data preparation function, reused by the model-training notebook.
+# Deterministic with optional feature sets, and saves the preprocessor for reuse at inference time.
+# ========================================================
+def prepare(data_path: str, drop_prev_defaults: bool = False,
+            add_engineered: bool = False, save_path=None):
+    """
+    Load -> (optional FE) -> split -> fit preprocessor on TRAIN ONLY -> transform both.
+    Returns: X_train_enc, X_test_enc, y_train, y_test, feature_names, preprocessor.
+    """
+    df = load_data(data_path, add_engineered=add_engineered)
+    X_train, X_test, y_train, y_test = split_data(df)
+
+    pre = build_preprocessor(drop_prev_defaults=drop_prev_defaults,
+                             add_engineered=add_engineered)
+    pre.fit(X_train)
+    if save_path is not None:
+        joblib.dump(pre, save_path)
+        print(f'Preprocessor saved to {save_path}')
+
+    X_train_enc = transform(pre, X_train)
+    X_test_enc = transform(pre, X_test)
+    feature_names = get_feature_names(pre)
+    return X_train_enc, X_test_enc, y_train, y_test, feature_names, pre
+
+
+# ========================================================
+# End-to-end convenience wrapper for the preprocessing notebook
 # ========================================================
 def run_full_pipeline(data_path: str):
     """End-to-end convenience function used by the preprocessing notebook."""

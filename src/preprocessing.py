@@ -1,9 +1,10 @@
 """
-Preprocessing pipeline for the Loan Default Risk project..
-All transformations are fit on the training set only and applied to val/test.
+Preprocessing pipeline for the Loan Approval Prediction project.
+All transformations are fit on the training set only and applied to test set.
+Validation is done using k-fold cross-validation inside the training set, so the test set remains untouched.
 Target:
-    is_risky = 1 - loan_status
-    (loan_status: 1 = approved, 0 = rejected  ->  risky = rejected applicant)
+    loan_status (1 = approved, 0 = rejected) - predicted directly.
+    The approved class (1) is the minority (~22%).
 """
 
 import sys
@@ -46,9 +47,9 @@ NOMINAL_COLS = [
     'previous_loan_defaults_on_file'
 ]
 
-# loan_status is dropped before modeling because
-# it is the inverse of our target variable (is_risky)
-DROP_COLS = ['loan_status']
+# loan_status is the prediction target (y), so it is held out of the
+# feature matrix X - it is the label, not a feature.
+TARGET_COL = 'loan_status'
 
 
 DEFAULT_PREPROCESSOR_PATH = MODELS_DIR / 'preprocessor.pkl'
@@ -60,33 +61,34 @@ DEFAULT_PREPROCESSOR_PATH = MODELS_DIR / 'preprocessor.pkl'
 # ========================================================
 # Target creation
 # ========================================================
-def load_and_create_target(path: str) -> pd.DataFrame:
-    """Load the CSV and build the binary target is_risky = 1 - loan_status."""
-    df = pd.read_csv(path)
-    df['is_risky'] = 1 - df['loan_status']
-    return df
+def load_data(path: str) -> pd.DataFrame:
+    """Load the CSV. The target is loan_status (1 = approved, 0 = rejected)."""
+    return pd.read_csv(path)
 
 # ========================================================
-# Numerical cleaning: Handle outlier ages and log-transform income
+# Numerical cleaning: Handle outlier ages and log-transform skewed features
 # ========================================================
 def _clean_numerical(X):
     """
-    Cap implausible ages and log-transform income.
+    Cap implausible ages and log-transform the two heavy right-skewed features
+    (income and employment experience). clip(lower=0) guards against any negative
+    values producing NaN under log1p.
     """
     X = X.copy()
     X['person_age'] = X['person_age'].clip(upper=AGE_CAP)
-    X['person_income'] = np.log1p(X['person_income'])
+    X['person_income'] = np.log1p(X['person_income'].clip(lower=0))
+    X['person_emp_exp'] = np.log1p(X['person_emp_exp'].clip(lower=0))
     return X
 
 
 # ========================================================
-# Train/test split (80/20), stratified on is_risky.
+# Train/test split (80/20), stratified on loan_status.
 # Cross-validation with 5-fold StratifiedKFold runs INSIDE the training
 # set during tuning. Test set stays untouched until final evaluation.
 # ========================================================
 def split_data(df: pd.DataFrame, test_size: float = 0.20):
-    X = df.drop(columns=DROP_COLS + ['is_risky'])
-    y = df['is_risky']
+    X = df.drop(columns=[TARGET_COL])
+    y = df[TARGET_COL]
 
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=test_size, stratify=y, random_state=SEED
@@ -101,7 +103,7 @@ def split_data(df: pd.DataFrame, test_size: float = 0.20):
 def build_preprocessor(drop_prev_defaults: bool = False) -> ColumnTransformer:
     """
     Build a ColumnTransformer that:
-    - Cleans then scales numerical features (cap age, log income, StandardScaler)
+    - Cleans then scales numerical features (cap age, log skewed features, StandardScaler)
     - Ordinally encodes person_education (HS < Associate < Bachelor < Master < Doctorate)
     - One-hot encodes the nominal categoricals
     
@@ -109,7 +111,10 @@ def build_preprocessor(drop_prev_defaults: bool = False) -> ColumnTransformer:
     near-perfect shortcut predictor) to produce the WITHOUT feature set.
     """
     numerical_pipeline = Pipeline([
-        ('clean', FunctionTransformer(_clean_numerical, validate=False)),
+        # _clean_numerical changes values, not columns, so names pass through. 
+        # Required for ColumnTransformer.get_feature_names_out().
+        ('clean', FunctionTransformer(_clean_numerical, validate=False,
+                                      feature_names_out='one-to-one')),
         ('scaler', StandardScaler()),
     ])
 
@@ -137,12 +142,19 @@ def build_preprocessor(drop_prev_defaults: bool = False) -> ColumnTransformer:
     return preprocessor
 
 
-def fit_and_save_preprocessor(X_train: pd.DataFrame, path=DEFAULT_PREPROCESSOR_PATH) -> ColumnTransformer:
-    preprocessor = build_preprocessor()
+def fit_and_save_preprocessor(X_train: pd.DataFrame, path=DEFAULT_PREPROCESSOR_PATH,
+                              drop_prev_defaults: bool = False) -> ColumnTransformer:
+    """
+    Fit a preprocessor on X_train and save it. Defaults to the WITH feature set. 
+    Pass drop_prev_defaults=True to fit and save the WITHOUT variant and
+    save it in a distinct `path` so it doesn't overwrite the demo pkl.
+    """
+    preprocessor = build_preprocessor(drop_prev_defaults=drop_prev_defaults)
     preprocessor.fit(X_train)
     joblib.dump(preprocessor, path)
     print(f'Preprocessor saved to {path}')
     return preprocessor
+
 
 
 def transform(preprocessor: ColumnTransformer, X: pd.DataFrame) -> np.ndarray:
@@ -150,12 +162,12 @@ def transform(preprocessor: ColumnTransformer, X: pd.DataFrame) -> np.ndarray:
 
 
 def get_feature_names(preprocessor: ColumnTransformer) -> list:
-    """Return the column names of the encoded matrix, in output order."""
-    ohe = preprocessor.named_transformers_['nom']['ohe']
-    # ohe.feature_names_in_ = the nominal cols this preprocessor was actually fit on
-    # (3 cols for the WITHOUT set, 4 for WITH)
-    nom_names = ohe.get_feature_names_out(ohe.feature_names_in_).tolist()
-    return list(NUMERICAL_COLS) + list(ORDINAL_COLS) + nom_names
+    """
+    Return the column names of the encoded matrix, in output order, read directly
+    from the FITTED transformer so names can never desync from the matrix (handles
+    both the WITH and WITHOUT feature sets automatically).
+    """
+    return [name.split('__', 1)[-1] for name in preprocessor.get_feature_names_out()]
 
 
 # ========================================================
@@ -163,11 +175,11 @@ def get_feature_names(preprocessor: ColumnTransformer) -> list:
 # ========================================================
 def run_full_pipeline(data_path: str):
     """End-to-end convenience function used by the preprocessing notebook."""
-    df = load_and_create_target(data_path)
+    df = load_data(data_path)
 
-    # Confirms which class "risky" actually is.
-    ratio = df['is_risky'].value_counts(normalize=True).round(3).to_dict()
-    print(f'is_risky class balance: {ratio}')
+    # Class balance of the loan approval target (approved = 1 is the minority).
+    ratio = df[TARGET_COL].value_counts(normalize=True).round(3).to_dict()
+    print(f'loan_status class balance: {ratio}')
 
     X_train, X_test, y_train, y_test = split_data(df)
 

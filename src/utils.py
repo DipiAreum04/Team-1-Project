@@ -1,5 +1,5 @@
 """
-Shared constants and paths for the Loan Default Risk project.
+Shared constants and paths for the Loan Approval Prediction project.
 Defined ONCE here so the seed and folder locations do not drift apart
 between teammates or between files.
 """

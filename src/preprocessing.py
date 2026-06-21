@@ -1,10 +1,10 @@
 """
-Preprocessing pipeline for the Loan Default Risk project..
+Preprocessing pipeline for the Loan Approval Prediction project.
 All transformations are fit on the training set only and applied to test set.
 Validation is done using k-fold cross-validation inside the training set, so the test set remains untouched.
 Target:
-    is_risky = 1 - loan_status
-    (loan_status: 1 = approved, 0 = rejected  ->  risky = rejected applicant)
+    loan_status (1 = approved, 0 = rejected) - predicted directly.
+    The approved class (1) is the minority (~22%).
 """
 
 import sys
@@ -47,9 +47,9 @@ NOMINAL_COLS = [
     'previous_loan_defaults_on_file'
 ]
 
-# loan_status is dropped before modeling because
-# it is the inverse of our target variable (is_risky)
-DROP_COLS = ['loan_status']
+# loan_status is the prediction target (y), so it is held out of the
+# feature matrix X - it is the label, not a feature.
+TARGET_COL = 'loan_status'
 
 
 DEFAULT_PREPROCESSOR_PATH = MODELS_DIR / 'preprocessor.pkl'
@@ -61,11 +61,9 @@ DEFAULT_PREPROCESSOR_PATH = MODELS_DIR / 'preprocessor.pkl'
 # ========================================================
 # Target creation
 # ========================================================
-def load_and_create_target(path: str) -> pd.DataFrame:
-    """Load the CSV and build the binary target is_risky = 1 - loan_status."""
-    df = pd.read_csv(path)
-    df['is_risky'] = 1 - df['loan_status']
-    return df
+def load_data(path: str) -> pd.DataFrame:
+    """Load the CSV. The target is loan_status (1 = approved, 0 = rejected)."""
+    return pd.read_csv(path)
 
 # ========================================================
 # Numerical cleaning: Handle outlier ages and log-transform skewed features
@@ -84,13 +82,13 @@ def _clean_numerical(X):
 
 
 # ========================================================
-# Train/test split (80/20), stratified on is_risky.
+# Train/test split (80/20), stratified on loan_status.
 # Cross-validation with 5-fold StratifiedKFold runs INSIDE the training
 # set during tuning. Test set stays untouched until final evaluation.
 # ========================================================
 def split_data(df: pd.DataFrame, test_size: float = 0.20):
-    X = df.drop(columns=DROP_COLS + ['is_risky'])
-    y = df['is_risky']
+    X = df.drop(columns=[TARGET_COL])
+    y = df[TARGET_COL]
 
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=test_size, stratify=y, random_state=SEED
@@ -177,11 +175,11 @@ def get_feature_names(preprocessor: ColumnTransformer) -> list:
 # ========================================================
 def run_full_pipeline(data_path: str):
     """End-to-end convenience function used by the preprocessing notebook."""
-    df = load_and_create_target(data_path)
+    df = load_data(data_path)
 
-    # Confirms which class "risky" actually is.
-    ratio = df['is_risky'].value_counts(normalize=True).round(3).to_dict()
-    print(f'is_risky class balance: {ratio}')
+    # Class balance of the loan approval target (approved = 1 is the minority).
+    ratio = df[TARGET_COL].value_counts(normalize=True).round(3).to_dict()
+    print(f'loan_status class balance: {ratio}')
 
     X_train, X_test, y_train, y_test = split_data(df)
 

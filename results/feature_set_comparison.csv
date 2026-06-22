@@ -1,0 +1,5 @@
+feature_set,model,pr_auc
+WITHOUT_prevdef,LogisticRegression,0.7014748778699105
+WITHOUT_prevdef,RandomForest,0.8581586431731323
+WITHOUT_prevdef,GradientBoosting,0.8716871620735077
+WITHOUT_prevdef,GausssianNB,0.6601258042974438

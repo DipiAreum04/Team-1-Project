@@ -76,6 +76,36 @@ def load_models(model_files=None, models_dir=MODELS_DIR, verbose: bool = True) -
     return models
 
 
+# Feature-set pickles from train.run_feature_set are named '{TrainingName}_{tag}.pkl'.
+# Map those training names to the display names used elsewhere in the evaluation.
+FEATURE_SET_MODELS = {
+    'Logistic Regression':  'LogisticRegression',
+    'Random Forest':        'RandomForest',
+    'Gradient Boosting':    'GradientBoosting',
+    'Gaussian Naive Bayes': 'GaussianNB',
+}
+
+
+def load_feature_set_models(tag, name_map=None, models_dir=MODELS_DIR, verbose: bool = True) -> dict:
+    """Load the '{name}_{tag}.pkl' pipelines saved by train.run_feature_set for one feature set.
+
+    Returns {display_name: pipeline}. Missing files are skipped with a note rather than
+    raising (SVM is excluded from feature-set runs, and a tag may cover only some models).
+    """
+    name_map = name_map or FEATURE_SET_MODELS
+    models = {}
+    for display, stub in name_map.items():
+        path = models_dir / f'{stub}_{tag}.pkl'
+        if not path.exists():
+            if verbose:
+                print(f'  (skip) {path.name} not found')
+            continue
+        models[display] = joblib.load(path)
+        if verbose:
+            print(f'Loaded: {path.name}  ->  {display}')
+    return models
+
+
 def load_cv_results(results_dir=RESULTS_DIR) -> pd.DataFrame:
     cv_df = pd.read_csv(results_dir / 'cv_results_primary.csv')
     return cv_df.drop_duplicates(subset='model').reset_index(drop=True)
@@ -315,6 +345,64 @@ def outcome_masks(y_true, preds) -> dict:
         'FP': (preds == 1) & (y_true == 0),
         'FN': (preds == 0) & (y_true == 1),
     }
+
+
+def confusion_counts_table(y_true, preds) -> pd.DataFrame:
+    """Table of TP / TN / FP / FN counts and share of the test set."""
+    masks = outcome_masks(y_true, preds)
+    n = len(y_true)
+    rows = [
+        ('TP', 'True Positive  (predicted Approved, actually Approved)', masks['TP']),
+        ('TN', 'True Negative  (predicted Rejected, actually Rejected)', masks['TN']),
+        ('FP', 'False Positive (predicted Approved, actually Rejected)', masks['FP']),
+        ('FN', 'False Negative (predicted Rejected, actually Approved)', masks['FN']),
+    ]
+    return pd.DataFrame([
+        {
+            'Outcome': code,
+            'Description': desc,
+            'Count': int(mask.sum()),
+            '% of test set': round(100 * mask.sum() / n, 2),
+        }
+        for code, desc, mask in rows
+    ])
+
+
+def plot_confusion_matrix(y_true, preds, title='', save_path=None):
+    """Single-model confusion matrix heatmap (actual vs predicted)."""
+    cm = confusion_matrix(y_true, preds)
+    fig, ax = plt.subplots(figsize=(5.5, 4.5))
+    sns.heatmap(
+        cm, annot=True, fmt='d', cmap='Blues', ax=ax, cbar=False,
+        xticklabels=['Rejected (0)', 'Approved (1)'],
+        yticklabels=['Rejected (0)', 'Approved (1)'],
+    )
+    ax.set_xlabel('Predicted')
+    ax.set_ylabel('Actual')
+    ax.set_title(title or 'Confusion Matrix — Test Set')
+    plt.tight_layout()
+    if save_path:
+        plt.savefig(save_path, bbox_inches='tight')
+    plt.show()
+
+
+def plot_outcome_counts(y_true, preds, title='', save_path=None):
+    """Horizontal bar chart of TP / TN / FP / FN counts."""
+    masks = outcome_masks(y_true, preds)
+    labels = ['TP', 'TN', 'FP', 'FN']
+    counts = [int(masks[k].sum()) for k in labels]
+    colors = ['#27ae60', '#2980b9', '#c0392b', '#d35400']
+
+    fig, ax = plt.subplots(figsize=(6, 3.5))
+    bars = ax.barh(labels, counts, color=colors, edgecolor='white')
+    ax.bar_label(bars, fmt='%d')
+    ax.set_xlabel('Count')
+    ax.set_title(title or 'Prediction Outcomes — Test Set')
+    ax.set_xlim(0, max(counts) * 1.15 if counts else 1)
+    plt.tight_layout()
+    if save_path:
+        plt.savefig(save_path, bbox_inches='tight')
+    plt.show()
 
 
 def outcome_profile(X, masks, numeric_cols) -> pd.DataFrame:

@@ -29,7 +29,7 @@ from utils import SEED, MODELS_DIR
 EDUCATION_ORDER = [['High School', 'Associate', 'Bachelor', 'Master', 'Doctorate']] # order of education levels
 
 # person_age values above this are considered implausible for loans because 
-# average life expectancy in Canada is 82.5 years. This caps outliers without removing rows.
+# average life expectancy in Canada is 82.1 years. This caps outliers without removing rows.
 AGE_CAP = 80  
 
 # numerical columns

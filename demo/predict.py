@@ -10,6 +10,7 @@ Example usage:
     python demo\predict.py                          # predicts using the built-in sample applicants
     python demo\predict.py --json applicant.json    # predicts for one applicant object, or a JSON array
     python demo\predict.py --csv applicants.csv     # predicts for a batch of applicants and writes <file>_predictions.csv
+    python demo\predict.py --without-prevdef        # use the model trained without prior-default history
     python demo\predict.py --threshold 0.30         # override the decision threshold
 """
 

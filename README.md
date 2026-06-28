@@ -135,9 +135,9 @@ Run the notebooks **in order**. Each notebook’s first code cell adds `src/` to
 - **Section 6:** comparison table sorted by Cross-Validation F1.  
 - **Section 7:** `session.save()` → writes `models/LogisticRegression.pkl`, `SVM_RBF.pkl`, …  
 - **Section 8:** Feature-set Experiments  
-  - **8.1** — without `previous_loan_defaults_on_file`  
-  - **8.2** — with engineered ratio features (with & without prev. default)  
-  - **8.3** — copies best demo pipelines to:
+  - **8.1**: without `previous_loan_defaults_on_file`  
+  - **8.2**: with engineered ratio features (with & without prev. default)  
+  - **8.3**: copies best demo pipelines to:
     - `models/best_demo_model_with_prevdef.pkl`
     - `models/best_demo_model_without_prevdef.pkl`
     - `models/best_demo_model_engineered.pkl`

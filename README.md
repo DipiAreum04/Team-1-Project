@@ -34,6 +34,7 @@ COEN330-Machine-Learning-Project/
 ├── example.json                # sample applicant for demo/predict.py
 ├── data/
 │   ├── data_link.txt           # dataset URL and access notes
+│   ├── processed/
 │   └── raw/
 │       └── dataset.csv         # raw data
 ├── notebooks/

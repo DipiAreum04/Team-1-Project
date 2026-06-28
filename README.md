@@ -31,6 +31,7 @@ We train and compare **five** classifiers on historical loan-approval decisions:
 COEN330-Machine-Learning-Project/
 ├── README.md
 ├── requirements.txt
+├── example.json                # sample applicant for demo/predict.py
 ├── data/
 │   ├── data_link.txt           # dataset URL and access notes
 │   └── raw/
@@ -55,7 +56,8 @@ COEN330-Machine-Learning-Project/
 │   ├── feature_set_test_results.csv
 │   └── plots/                 # figures, graphs and plots
 ├── demo/
-│   └── demo.ipynb             # prediction demo (with vs without prev. default)
+│   ├── demo.ipynb             # interactive prediction demo (with vs without prev. default)
+│   └── predict.py             # command-line prediction script
 └── report/
     └── final_report.pdf       # final report
 ```
@@ -168,6 +170,55 @@ Compares predictions **with** vs **without** the `previous_loan_defaults_on_file
 
 Run all cells top-to-bottom. Summary plots are saved under `results/plots/`.
 
+### 3.4 Command-line demo (`demo/predict.py`)
+
+A CLI alternative to the notebook demo. Loads the saved **Gradient Boosting** pipeline and predicts approval for new applicants. The pipeline includes preprocessing, so only pass **raw applicant fields** (no manual encoding or scaling).
+
+**Prerequisites** (after training + evaluation):
+
+| File | Purpose |
+|------|---------|
+| `models/GradientBoosting.pkl` | Default model (with `previous_loan_defaults_on_file`) |
+| `models/GradientBoosting_WITHOUT_prevdef.pkl` | Optional; use with `--without-prevdef` |
+| `results/test_results.csv` | F1-tuned threshold for the default model |
+| `results/feature_set_test_results.csv` | Threshold for the without-prevdef model |
+
+If a threshold CSV is missing, the script uses default threshold = `0.50`.
+
+**Usage** (from the project root, with the virtual environment activated):
+
+```bash
+# Predicts on built-in sample applicants (two profiles)
+python demo/predict.py
+
+# Predicts on a single applicant given as a JSON array
+python demo/predict.py --json path/to/applicant.json
+
+# Predicts for a batch of applicants and writes the result as <file>_predictions.csv in the mentioned path
+python demo/predict.py --csv path/to/applicants.csv
+
+# Uses the model trained without previous_loan_defaults_on_file
+python demo/predict.py --without-prevdef
+
+# Overrides the decision threshold
+python demo/predict.py --threshold 0.30
+```
+
+**Input columns**:
+
+`person_age`, `person_gender`, `person_education`, `person_income`, `person_emp_exp`, `person_home_ownership`, `loan_amnt`, `loan_intent`, `loan_int_rate`, `cb_person_cred_hist_length`, `credit_score`, `previous_loan_defaults_on_file`
+
+`loan_percent_income` is optional; if omitted, it is computed as `loan_amnt / person_income`.
+
+**Sample file:** `example.json` at the project root is a ready-to-run test case (25-year-old applicant, doctorate, no prior defaults). Same field layout as the training data, so open that file or copy its structure for your own inputs.
+
+To run the sample file from project root:
+```bash
+python demo\predict.py --json example.json
+```
+
+**Output:** for each applicant, prints `APPROVED` or `REJECTED` and `P(approved)`. CSV batch mode adds `approval_probability` and `decision` columns to the output file.
+
 ---
 
 ## 4. Key results (Reference)
@@ -202,5 +253,6 @@ Confusion-matrix breakdown (TP / TN / FP / FN) for the primary model is in **sec
 |-------|-----|
 | `FileNotFoundError: dataset.csv` | Place CSV in `data/raw/dataset.csv` |
 | `FileNotFoundError: *.pkl` | Run `03_model_training.ipynb` through section 7 and 8 |
+| `predict.py` threshold / model errors | Run `04_evaluation.ipynb` first; ensure `GradientBoosting.pkl` exists in `models/` |
 | Stale imports after editing `src/` | Re-run Setup cell (`importlib.reload(train)` in training notebook) |
 | SVM / feature-set cells very slow | Normal on ~36k rows, wait for completion or reduce grid in notebook |

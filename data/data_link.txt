@@ -1,0 +1,15 @@
+Loan Approval Prediction Dataset
+================================
+
+Source: Kaggle - https://www.kaggle.com/datasets/taweilo/loan-approval-classification-data/data
+
+File name: dataset.csv
+Place the downloaded CSV file in: data/raw/dataset.csv
+
+Description:
+  45,000 loan applications, 14 columns.
+  Target: loan_status (1 = approved, 0 = rejected).
+
+Access:
+  1. Download from the link above.
+  2. Save as data/raw/dataset.csv (do not rename columns).

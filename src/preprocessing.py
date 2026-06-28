@@ -19,7 +19,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.compose import ColumnTransformer
 import joblib
 
-# Make utils.py importable whether this runs from src/, the project root, or a notebook.
+# Make utils.py importable whether this runs from src/, the project root, or a notebook
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from utils import SEED, MODELS_DIR 
 
@@ -29,7 +29,7 @@ from utils import SEED, MODELS_DIR
 EDUCATION_ORDER = [['High School', 'Associate', 'Bachelor', 'Master', 'Doctorate']] # order of education levels
 
 # person_age values above this are considered implausible for loans because 
-# average life expectancy in Canada is 82.5 years. This caps outliers without removing rows.
+# average life expectancy in Canada is 82.1 years. This caps outliers without removing rows.
 AGE_CAP = 80  
 
 # numerical columns
@@ -53,7 +53,7 @@ NOMINAL_COLS = [
 ]
 
 # loan_status is the prediction target (y), so it is held out of the
-# feature matrix X - it is the label, not a feature.
+# feature matrix X as it is the label, not a feature.
 TARGET_COL = 'loan_status'
 
 
@@ -64,7 +64,7 @@ DEFAULT_PREPROCESSOR_PATH = MODELS_DIR / 'preprocessor.pkl'
 # ========================================================
 
 # ========================================================
-# Optional feature engineering (row-wise only -> leakage-safe)
+# Optional feature engineering
 # ========================================================
 def add_features(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -72,7 +72,7 @@ def add_features(df: pd.DataFrame) -> pd.DataFrame:
     so it is leakage-free and can be applied before the train/test split.
 
     adult_years = (person_age - 18), floored at 1, to anchor ratios to working/adult
-    years rather than raw age and clip(lower=1) guards against divide-by-zero / under-18 rows.
+    years rather than raw age.
 
     NOTE: employment_experience_ratio can exceed 1 when stated experience is implausibly
     high for the age, so those rows are noise resulting from data quality issues.
@@ -144,12 +144,9 @@ def build_preprocessor(drop_prev_defaults: bool = False,
     drop_prev_defaults: if True, excludes 'previous_loan_defaults_on_file' (the
         near-perfect shortcut predictor) to produce the WITHOUT feature set.
     add_engineered: if True, includes the two ratio features from add_features()
-        in the numerical group (the input df must already contain them, i.e. it was
-        loaded with load_data(..., add_engineered=True)).
+        in the numerical group.
     """
     numerical_pipeline = Pipeline([
-        # _clean_numerical changes values, not columns, so names pass through.
-        # Required for ColumnTransformer.get_feature_names_out().
         ('clean', FunctionTransformer(_clean_numerical, validate=False,
                                       feature_names_out='one-to-one')),
         ('scaler', StandardScaler()),
@@ -168,7 +165,7 @@ def build_preprocessor(drop_prev_defaults: bool = False,
     # numerical group: optionally extend with engineered ratio columns
     numerical_cols = NUMERICAL_COLS + ENGINEERED_COLS if add_engineered else NUMERICAL_COLS
 
-    # feature-set switch: drop the shortcut column from the nominal group only
+    # feature-set switch: drop the loan default column from the nominal group only if flag is true
     nominal_cols = [c for c in NOMINAL_COLS if c != 'previous_loan_defaults_on_file'] \
         if drop_prev_defaults else NOMINAL_COLS
 
@@ -203,9 +200,7 @@ def transform(preprocessor: ColumnTransformer, X: pd.DataFrame) -> np.ndarray:
 
 def get_feature_names(preprocessor: ColumnTransformer) -> list:
     """
-    Return the column names of the encoded matrix, in output order, read directly
-    from the FITTED transformer so names can never desync from the matrix (handles
-    all feature-set variants automatically).
+    Return the column names of the encoded matrix in output order.
     """
     return [name.split('__', 1)[-1] for name in preprocessor.get_feature_names_out()]
 
@@ -261,6 +256,4 @@ def run_full_pipeline(data_path: str):
     print(f'Encoded feature count: {X_train_enc.shape[1]}')
     print(f'Features: {feature_names}')
 
-    return (X_train_enc, X_test_enc,
-            y_train, y_test,
-            feature_names, preprocessor)
+    return (X_train_enc, X_test_enc, y_train, y_test, feature_names, preprocessor)

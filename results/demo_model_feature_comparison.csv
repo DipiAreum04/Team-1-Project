@@ -1,0 +1,4 @@
+Profile,Previous defaults,With feature P(Approved),With feature Decision,Without feature P(Approved),Without feature Decision,Probability difference (with - without),Decision changed?
+Applicant A,No,0.20384119743111948,REJECTED,0.11257720048273667,REJECTED,0.0912639969483828,False
+Applicant B,No,0.9999843231487854,APPROVED,0.9985225569103072,APPROVED,0.0014617662384781571,False
+Applicant C,Yes,0.00020572873790849434,REJECTED,0.09407955548332121,REJECTED,-0.09387382674541271,False

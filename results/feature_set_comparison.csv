@@ -1,0 +1,13 @@
+feature_set,model,f1
+WITHOUT_prevdef,LogisticRegression,0.6109397522112401
+WITHOUT_prevdef,RandomForest,0.7671918612084083
+WITHOUT_prevdef,GradientBoosting,0.7734650509440071
+WITHOUT_prevdef,GaussianNB,0.6098587531396054
+WITH_prevdef_eng,LogisticRegression,0.7675653030989129
+WITH_prevdef_eng,RandomForest,0.8275456279193563
+WITH_prevdef_eng,GradientBoosting,0.8361227602681789
+WITH_prevdef_eng,GaussianNB,0.6335498984110307
+WITHOUT_prevdef_eng,LogisticRegression,0.610850215449553
+WITHOUT_prevdef_eng,RandomForest,0.766903206375064
+WITHOUT_prevdef_eng,GradientBoosting,0.7729427487089495
+WITHOUT_prevdef_eng,GaussianNB,0.6090885957956365

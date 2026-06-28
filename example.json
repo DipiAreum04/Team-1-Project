@@ -1,0 +1,14 @@
+{
+    "person_age": 25,
+    "person_gender": "female",
+    "person_education": "Doctorate",
+    "person_income": 50000,
+    "person_emp_exp": 6,
+    "person_home_ownership": "OTHER",
+    "loan_amnt": 10000,
+    "loan_intent": "DEBTCONSOLIDATION",
+    "loan_int_rate": 11.5,
+    "cb_person_cred_hist_length": 5,
+    "credit_score": 640,
+    "previous_loan_defaults_on_file": "No"
+  }

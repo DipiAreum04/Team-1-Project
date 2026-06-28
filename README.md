@@ -1,6 +1,6 @@
 # Loan Approval Prediction Model
 
-**Team:** 1
+**Team:** 1  
 **Course:** COEN 330 - Applied Machine Learning (Summer 2026)  
 **Task:** Binary classification: predict whether a loan application will be **approved** (`loan_status = 1`) or **rejected** (`loan_status = 0`).
 
